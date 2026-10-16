@@ -63,6 +63,7 @@ target_quarter_sample.blit(target_overlay, (0, 0))
 def spawn_new_biscuit():
     global active_quarters, active_soak_timers
     global dragging, grab_offset_x, grab_offset_y, vel_x, vel_y, biscuit_rect
+    global spawn_cooldown, is_spawning_cooldown, has_been_grabbed
 
     active_quarters = list(range(4))
     active_soak_timers = [0.0] * 4
@@ -72,11 +73,15 @@ def spawn_new_biscuit():
     grab_offset_y = 0
     vel_x = 0
     vel_y = 0
+    has_been_grabbed = False
 
     init_x = glass_rect.right + 20
     init_y = 550
     total_h = sum(quarter_imgs[i].get_height() for i in active_quarters)
     biscuit_rect = pygame.Rect(init_x, init_y, b_width, total_h)
+    
+    spawn_cooldown = 0.0
+    is_spawning_cooldown = False
 
 def reset_game():
     global is_broken, fallen_quarter_img, fallen_quarter_pos
@@ -117,10 +122,11 @@ while running:
             if event.key == pygame.K_SPACE and game_over:
                 reset_game()
 
-        elif event.type == pygame.MOUSEBUTTONDOWN and not game_over:
+        elif event.type == pygame.MOUSEBUTTONDOWN and not game_over and not is_spawning_cooldown:
             if event.button == 1:
                 if biscuit_rect.collidepoint(event.pos):
                     dragging = True
+                    has_been_grabbed = True
                     grab_offset_x = event.pos[0] - biscuit_rect.x
                     grab_offset_y = event.pos[1] - biscuit_rect.y
 
@@ -128,8 +134,25 @@ while running:
             if event.button == 1:
                 dragging = False
 
-    if game_over:
+    if game_over or is_spawning_cooldown:
         dragging = False
+
+    if is_spawning_cooldown:
+        spawn_cooldown += dt
+        if spawn_cooldown >= 2.0:
+            spawn_new_biscuit()
+
+    current_tea_h = int(tea_height)
+    in_tea = False
+    if current_tea_h > 0:
+        tea_collision_rect = pygame.Rect(
+            tea_rect.x, 
+            tea_rect.bottom - current_tea_h, 
+            tea_rect.width, 
+            current_tea_h
+        )
+        if biscuit_rect.colliderect(tea_collision_rect):
+            in_tea = True
 
     if dragging:
         mouse_pos = pygame.mouse.get_pos()
@@ -144,40 +167,98 @@ while running:
 
         biscuit_rect.x += int(vel_x)
         biscuit_rect.y += int(vel_y)
+    elif has_been_grabbed and not game_over and not is_spawning_cooldown:
+        if in_tea:
+            vel_y += GRAVITY * 0.2
+            vel_x *= 0.95
+            vel_y *= 0.95
+        else:
+            vel_y += GRAVITY
+            
+        biscuit_rect.x += int(vel_x)
+        biscuit_rect.y += int(vel_y)
     else:
         vel_x = 0
         vel_y = 0
 
-    current_tea_h = int(tea_height)
-    if current_tea_h > 0 and not is_refill_animating and len(active_quarters) > 0 and not game_over:
-        tea_collision_rect = pygame.Rect(
-            tea_rect.x, 
-            tea_rect.bottom - current_tea_h, 
-            tea_rect.width, 
-            current_tea_h
-        )
+    if biscuit_rect.left < 0:
+        biscuit_rect.left = 0
+        vel_x = 0
+    if biscuit_rect.right > 600:
+        biscuit_rect.right = 600
+        vel_x = 0
+    if biscuit_rect.top < 0:
+        biscuit_rect.top = 0
+        vel_y = 0
 
+    if not dragging and has_been_grabbed and not game_over and not is_spawning_cooldown:
+        if current_tea_h > 0 and tea_rect.x <= biscuit_rect.centerx <= tea_rect.right:
+            tea_top = tea_rect.bottom - current_tea_h
+            if biscuit_rect.top >= tea_top:
+                is_broken = True
+                game_over = True
+                dragging = False
+                broken_q_idx = active_quarters.pop() if active_quarters else 0
+
+                fallen_quarter_img = quarter_imgs[broken_q_idx].copy()
+                overlay = pygame.Surface(fallen_quarter_img.get_size(), pygame.SRCALPHA)
+                overlay.fill((60, 30, 5, 160))
+                fallen_quarter_img.blit(overlay, (0, 0))
+
+                fallen_quarter_pos = [
+                    tea_rect.centerx - fallen_quarter_img.get_width() // 2,
+                    glass_rect.bottom - fallen_quarter_img.get_height() - 20
+                ]
+
+                if len(active_quarters) > 0:
+                    new_h = sum(quarter_imgs[i].get_height() for i in active_quarters)
+                    biscuit_rect.height = new_h
+                else:
+                    biscuit_rect.height = 0
+
+    if biscuit_rect.bottom >= 800 and not game_over and not is_spawning_cooldown:
+        biscuit_rect.bottom = 800
+        game_over = True
+        dragging = False
+
+    glass_wall_margin = 15
+    glass_inner_left = glass_rect.left + glass_wall_margin
+    glass_inner_right = glass_rect.right - glass_wall_margin
+
+    if biscuit_rect.bottom > glass_rect.top:
+        if biscuit_rect.centerx < glass_rect.centerx and biscuit_rect.right > glass_inner_left and biscuit_rect.left < glass_inner_left:
+            biscuit_rect.right = glass_inner_left
+            vel_x = 0
+        elif biscuit_rect.centerx > glass_rect.centerx and biscuit_rect.left < glass_inner_right and biscuit_rect.right > glass_inner_right:
+            biscuit_rect.left = glass_inner_right
+            vel_x = 0
+
+    if current_tea_h > 0 and not is_refill_animating and len(active_quarters) > 0 and not game_over and not is_spawning_cooldown:
         active_q_idx = active_quarters[-1]
 
         q_y_offset = sum(quarter_imgs[i].get_height() for i in active_quarters[:-1])
         q_h = quarter_imgs[active_q_idx].get_height()
         q_world_rect = pygame.Rect(biscuit_rect.x, biscuit_rect.y + q_y_offset, biscuit_rect.width, q_h)
 
-        if biscuit_rect.colliderect(tea_collision_rect):
-            buoyancy = 0.8
-            drag_resistance = 0.8
+        if in_tea:
+            if dragging:
+                buoyancy = 0.8
+                drag_resistance = 0.8
 
-            vel_x *= drag_resistance
-            vel_y *= drag_resistance
-            vel_y -= buoyancy
+                vel_x *= drag_resistance
+                vel_y *= drag_resistance
+                vel_y -= buoyancy
 
             overlap_rect = biscuit_rect.clip(tea_collision_rect)
-            overlap_area = overlap_rect.width * overlap_rect.height
+            
+            horiz_overlap = min(biscuit_rect.right, tea_collision_rect.right) - max(biscuit_rect.left, tea_collision_rect.left)
+            vert_overlap = min(biscuit_rect.bottom, tea_collision_rect.bottom) - max(biscuit_rect.top, tea_collision_rect.top)
 
-            base_decrease_speed = 0.1
-            depth_factor = 0.00002
-
-            tea_height = max(0.0, tea_height - (base_decrease_speed + overlap_area * depth_factor))
+            if vert_overlap < horiz_overlap or (biscuit_rect.left >= tea_collision_rect.left and biscuit_rect.right <= tea_collision_rect.right):
+                base_decrease_speed = 0.1
+                depth_factor = 0.00002
+                overlap_area = overlap_rect.width * overlap_rect.height
+                tea_height = max(0.0, tea_height - (base_decrease_speed + overlap_area * depth_factor))
 
         if q_world_rect.colliderect(tea_collision_rect):
             active_soak_timers[active_q_idx] += dt
@@ -209,7 +290,9 @@ while running:
                     new_h = sum(quarter_imgs[i].get_height() for i in active_quarters)
                     biscuit_rect.height = new_h
                 else:
-                    spawn_new_biscuit()
+                    biscuit_rect.height = 0
+                    is_spawning_cooldown = True
+                    spawn_cooldown = 0.0
 
     if tea_height <= 0 and not is_refill_animating:
         empty_wait_timer += dt
@@ -266,20 +349,21 @@ while running:
 
     screen.blit(empty_glass_img, glass_rect)
 
-    curr_y = biscuit_rect.y
-    for q_idx in active_quarters:
-        img = quarter_imgs[q_idx].copy()
-        s_timer = active_soak_timers[q_idx]
+    if not is_spawning_cooldown and len(active_quarters) > 0:
+        curr_y = biscuit_rect.y
+        for q_idx in active_quarters:
+            img = quarter_imgs[q_idx].copy()
+            s_timer = active_soak_timers[q_idx]
 
-        if s_timer > 0.5:
-            darken_timer = s_timer - 0.5
-            dark_ratio = min(1.0, darken_timer / 1.5)
-            overlay = pygame.Surface(img.get_size(), pygame.SRCALPHA)
-            overlay.fill((60, 30, 5, int(160 * dark_ratio)))
-            img.blit(overlay, (0, 0))
+            if s_timer > 0.5:
+                darken_timer = s_timer - 0.5
+                dark_ratio = min(1.0, darken_timer / 1.5)
+                overlay = pygame.Surface(img.get_size(), pygame.SRCALPHA)
+                overlay.fill((60, 30, 5, int(160 * dark_ratio)))
+                img.blit(overlay, (0, 0))
 
-        screen.blit(img, (biscuit_rect.x, curr_y))
-        curr_y += img.get_height()
+            screen.blit(img, (biscuit_rect.x, curr_y))
+            curr_y += img.get_height()
 
     if game_over:
         overlay_screen = pygame.Surface((600, 800), pygame.SRCALPHA)
