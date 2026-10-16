@@ -1,16 +1,33 @@
 import pygame
 import sys
+import os
 
 pygame.init()
 
 screen = pygame.display.set_mode((600, 800))
 pygame.display.set_caption("test_game")
 
-biscuit = pygame.Rect(200, 200, 100, 200)
-glass = pygame.Rect(300 - 100, 500, 200, 250)
+assets_dir = os.path.join(os.path.dirname(__file__), "assets")
 
-tea_height = float(glass.height * 0.75)
-tea = pygame.Rect(glass.x, glass.bottom - int(tea_height), glass.width, int(tea_height))
+empty_glass_img = pygame.image.load(os.path.join(assets_dir, "Empty_Glass.png")).convert_alpha()
+tea_img = pygame.image.load(os.path.join(assets_dir, "Tea.png")).convert_alpha()
+
+empty_glass_img = pygame.transform.scale(
+    empty_glass_img, 
+    (int(empty_glass_img.get_width() * 0.75), int(empty_glass_img.get_height() * 0.75))
+)
+tea_img = pygame.transform.scale(
+    tea_img, 
+    (int(tea_img.get_width() * 0.75), int(tea_img.get_height() * 0.75))
+)
+
+glass_rect = empty_glass_img.get_rect(centerx=300, bottom=800)
+tea_rect = tea_img.get_rect(centerx=glass_rect.centerx, bottom=glass_rect.bottom)
+
+biscuit = pygame.Rect(200, 200, 100, 200)
+
+tea_height = float(tea_img.get_height())
+full_tea_height = tea_img.get_height()
 
 dragging = False
 grab_offset_x = 0
@@ -60,23 +77,39 @@ while running:
         vel_x = 0
         vel_y = 0
 
-    if biscuit.colliderect(tea) and tea_height > 0:
-        buoyancy = 0.8
-        drag_resistance = 0.8
-        
-        vel_x *= drag_resistance
-        vel_y *= drag_resistance
-        vel_y -= buoyancy
+    current_tea_h = int(tea_height)
+    if current_tea_h > 0:
+        tea_collision_rect = pygame.Rect(
+            tea_rect.x, 
+            tea_rect.bottom - current_tea_h, 
+            tea_rect.width, 
+            current_tea_h
+        )
+        if biscuit.colliderect(tea_collision_rect):
+            buoyancy = 0.8
+            drag_resistance = 0.8
+            
+            vel_x *= drag_resistance
+            vel_y *= drag_resistance
+            vel_y -= buoyancy
 
-        tea_height = max(0.0, tea_height - 0.2)
-        tea.height = int(tea_height)
-        tea.y = glass.bottom - tea.height
+            tea_height = max(0.0, tea_height - 0.2)
 
-    screen.fill((0, 0, 0))
-    if tea.height > 0:
-        pygame.draw.rect(screen, (255, 255, 0), tea)
-    pygame.draw.rect(screen, (255, 255, 255), biscuit)
-    pygame.draw.rect(screen, (255, 255, 255), glass, 2)
+    screen.fill((255, 255, 255))
+
+    current_tea_h = int(tea_height)
+    if current_tea_h > 0:
+        crop_area = pygame.Rect(
+            0, 
+            full_tea_height - current_tea_h, 
+            tea_rect.width, 
+            current_tea_h
+        )
+        draw_pos = (tea_rect.x, tea_rect.bottom - current_tea_h-18)
+        screen.blit(tea_img, draw_pos, crop_area)
+
+    screen.blit(empty_glass_img, glass_rect)
+    pygame.draw.rect(screen, (255, 0, 0), biscuit)
 
     pygame.display.flip()
     clock.tick(60)
