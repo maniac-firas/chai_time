@@ -6,7 +6,7 @@ pygame.init()
 
 WIDTH, HEIGHT = 600, 600
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Block Dodge - Space Physics")
+pygame.display.set_caption("Block Dodge")
 
 FPS = 60
 BLACK = (0, 0, 0)
