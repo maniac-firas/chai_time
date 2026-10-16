@@ -1,6 +1,7 @@
 import pygame
 import sys
 import os
+import math
 
 pygame.init()
 
@@ -52,13 +53,19 @@ full_tea_height = float(tea_img.get_height())
 top_layer_orig_width = top_layer_img.get_width()
 top_layer_orig_height = top_layer_img.get_height()
 
-font = pygame.font.SysFont("Arial", 36, bold=True)
-sub_font = pygame.font.SysFont("Arial", 24)
+font_path = os.path.join(assets_dir, "Retrolab.ttf")
+title_font = pygame.font.Font(font_path, 34)
+score_font = pygame.font.Font(font_path, 32)
+font = pygame.font.Font(font_path, 36)
+sub_font = pygame.font.Font(font_path, 20)
 
 target_quarter_sample = quarter_imgs[0].copy()
 target_overlay = pygame.Surface(target_quarter_sample.get_size(), pygame.SRCALPHA)
 target_overlay.fill((60, 30, 5, 150))
 target_quarter_sample.blit(target_overlay, (0, 0))
+
+score = 0
+game_state = "START"
 
 def spawn_new_biscuit():
     global active_quarters, active_soak_timers
@@ -110,29 +117,74 @@ clock = pygame.time.Clock()
 
 reset_game()
 
+time_counter = 0.0
+
 running = True
 while running:
     dt = clock.tick(60) / 1000.0
+    time_counter += dt
+
+    sine_offset = math.sin(time_counter * 3.0) * 8.0
+
+    mouse_click_pos = None
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE and game_over:
-                reset_game()
+            if event.key == pygame.K_SPACE:
+                if game_state == "START":
+                    score = 0
+                    reset_game()
+                    game_state = "PLAYING"
+                elif game_state == "GAME_OVER":
+                    score = 0
+                    reset_game()
+                    game_state = "PLAYING"
 
-        elif event.type == pygame.MOUSEBUTTONDOWN and not game_over and not is_spawning_cooldown:
+        elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                if biscuit_rect.collidepoint(event.pos):
-                    dragging = True
-                    has_been_grabbed = True
-                    grab_offset_x = event.pos[0] - biscuit_rect.x
-                    grab_offset_y = event.pos[1] - biscuit_rect.y
+                mouse_click_pos = event.pos
+                if game_state == "PLAYING" and not game_over and not is_spawning_cooldown:
+                    if biscuit_rect.collidepoint(event.pos):
+                        dragging = True
+                        has_been_grabbed = True
+                        grab_offset_x = event.pos[0] - biscuit_rect.x
+                        grab_offset_y = event.pos[1] - biscuit_rect.y
 
-        elif event.type == pygame.MOUSEBUTTONUP and not game_over:
+        elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
                 dragging = False
+
+    if game_state == "START":
+        screen.blit(bg_img, (0, 0))
+
+        title_y = 200 + sine_offset
+        btn_y = 450 + sine_offset
+
+        txt_title = title_font.render("Let's go have Chai!", True, (255, 220, 100))
+        screen.blit(txt_title, txt_title.get_rect(center=(300, title_y)))
+
+        start_btn_rect = pygame.Rect(0, 0, 200, 60)
+        start_btn_rect.center = (300, btn_y)
+
+        pygame.draw.rect(screen, (70, 140, 230), start_btn_rect, border_radius=12)
+        pygame.draw.rect(screen, (255, 255, 255), start_btn_rect, width=3, border_radius=12)
+
+        txt_start = font.render("START", True, (255, 255, 255))
+        screen.blit(txt_start, txt_start.get_rect(center=start_btn_rect.center))
+
+        txt_hint = sub_font.render("PRESS SPACE OR CLICK START", True, (220, 220, 220))
+        screen.blit(txt_hint, txt_hint.get_rect(center=(300, btn_y + 60)))
+
+        if mouse_click_pos and start_btn_rect.collidepoint(mouse_click_pos):
+            score = 0
+            reset_game()
+            game_state = "PLAYING"
+
+        pygame.display.flip()
+        continue
 
     if game_over or is_spawning_cooldown:
         dragging = False
@@ -197,6 +249,7 @@ while running:
             if biscuit_rect.top >= tea_top:
                 is_broken = True
                 game_over = True
+                game_state = "GAME_OVER"
                 dragging = False
                 broken_q_idx = active_quarters.pop() if active_quarters else 0
 
@@ -216,16 +269,16 @@ while running:
                 else:
                     biscuit_rect.height = 0
 
-    if biscuit_rect.bottom >= 800 and not game_over and not is_spawning_cooldown:
-        biscuit_rect.bottom = 800
+    if biscuit_rect.top > 800 and not game_over and not is_spawning_cooldown:
         game_over = True
+        game_state = "GAME_OVER"
         dragging = False
 
     glass_wall_margin = 15
     glass_inner_left = glass_rect.left + glass_wall_margin
     glass_inner_right = glass_rect.right - glass_wall_margin
 
-    if biscuit_rect.bottom > glass_rect.top:
+    if biscuit_rect.bottom > glass_rect.top and biscuit_rect.top < glass_rect.bottom:
         if biscuit_rect.centerx < glass_rect.centerx and biscuit_rect.right > glass_inner_left and biscuit_rect.left < glass_inner_left:
             biscuit_rect.right = glass_inner_left
             vel_x = 0
@@ -267,6 +320,7 @@ while running:
             if t >= FAIL_TIME and not is_broken:
                 is_broken = True
                 game_over = True
+                game_state = "GAME_OVER"
                 broken_q_idx = active_quarters.pop()
 
                 fallen_quarter_img = quarter_imgs[broken_q_idx].copy()
@@ -290,6 +344,7 @@ while running:
                     new_h = sum(quarter_imgs[i].get_height() for i in active_quarters)
                     biscuit_rect.height = new_h
                 else:
+                    score += 1
                     biscuit_rect.height = 0
                     is_spawning_cooldown = True
                     spawn_cooldown = 0.0
@@ -308,10 +363,33 @@ while running:
 
     screen.blit(bg_img, (0, 0))
 
+    score_y = 30 + sine_offset
+    txt_score = score_font.render(f"SCORE: {score}", True, (255, 255, 255))
+    screen.blit(txt_score, txt_score.get_rect(center=(300, score_y)))
+
     target_x = 20
     target_y = 400 - (target_quarter_sample.get_height() // 2)
     screen.blit(target_quarter_sample, (target_x, target_y))
     pygame.draw.rect(screen, (255, 255, 255), (target_x, target_y, target_quarter_sample.get_width(), target_quarter_sample.get_height()), 2)
+
+    if fallen_quarter_img:
+        screen.blit(fallen_quarter_img, fallen_quarter_pos)
+
+    if not is_spawning_cooldown and len(active_quarters) > 0:
+        curr_y = biscuit_rect.y
+        for q_idx in active_quarters:
+            img = quarter_imgs[q_idx].copy()
+            s_timer = active_soak_timers[q_idx]
+
+            if s_timer > 0.5:
+                darken_timer = s_timer - 0.5
+                dark_ratio = min(1.0, darken_timer / 1.5)
+                overlay = pygame.Surface(img.get_size(), pygame.SRCALPHA)
+                overlay.fill((60, 30, 5, int(160 * dark_ratio)))
+                img.blit(overlay, (0, 0))
+
+            screen.blit(img, (biscuit_rect.x, curr_y))
+            curr_y += img.get_height()
 
     current_tea_h = int(tea_height)
     if current_tea_h > 0:
@@ -344,37 +422,35 @@ while running:
         )
         screen.blit(scaled_top_layer, top_layer_draw_rect)
 
-    if fallen_quarter_img:
-        screen.blit(fallen_quarter_img, fallen_quarter_pos)
-
     screen.blit(empty_glass_img, glass_rect)
-
-    if not is_spawning_cooldown and len(active_quarters) > 0:
-        curr_y = biscuit_rect.y
-        for q_idx in active_quarters:
-            img = quarter_imgs[q_idx].copy()
-            s_timer = active_soak_timers[q_idx]
-
-            if s_timer > 0.5:
-                darken_timer = s_timer - 0.5
-                dark_ratio = min(1.0, darken_timer / 1.5)
-                overlay = pygame.Surface(img.get_size(), pygame.SRCALPHA)
-                overlay.fill((60, 30, 5, int(160 * dark_ratio)))
-                img.blit(overlay, (0, 0))
-
-            screen.blit(img, (biscuit_rect.x, curr_y))
-            curr_y += img.get_height()
 
     if game_over:
         overlay_screen = pygame.Surface((600, 800), pygame.SRCALPHA)
         overlay_screen.fill((0, 0, 0, 180))
         screen.blit(overlay_screen, (0, 0))
 
-        txt_go = font.render("GAME OVER", True, (255, 60, 60))
-        txt_sub = sub_font.render("Press SPACE to Restart", True, (255, 255, 255))
+        go_y = 350 + sine_offset
+        btn_y = 480 + sine_offset
 
-        screen.blit(txt_go, txt_go.get_rect(center=(300, 380)))
-        screen.blit(txt_sub, txt_sub.get_rect(center=(300, 430)))
+        txt_go = font.render("GAME OVER", True, (255, 60, 60))
+        screen.blit(txt_go, txt_go.get_rect(center=(300, go_y)))
+
+        restart_btn_rect = pygame.Rect(0, 0, 220, 55)
+        restart_btn_rect.center = (300, btn_y)
+
+        pygame.draw.rect(screen, (220, 70, 70), restart_btn_rect, border_radius=12)
+        pygame.draw.rect(screen, (255, 255, 255), restart_btn_rect, width=3, border_radius=12)
+
+        txt_restart = font.render("RESTART", True, (255, 255, 255))
+        screen.blit(txt_restart, txt_restart.get_rect(center=restart_btn_rect.center))
+
+        txt_sub = sub_font.render("PRESS SPACE OR CLICK RESTART", True, (220, 220, 220))
+        screen.blit(txt_sub, txt_sub.get_rect(center=(300, btn_y + 55)))
+
+        if mouse_click_pos and restart_btn_rect.collidepoint(mouse_click_pos):
+            score = 0
+            reset_game()
+            game_state = "PLAYING"
 
     pygame.display.flip()
 
