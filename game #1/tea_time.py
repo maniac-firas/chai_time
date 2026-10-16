@@ -3,11 +3,14 @@ import sys
 
 pygame.init()
 
-screen = pygame.display.set_mode((800, 800))
+screen = pygame.display.set_mode((600, 800))
 pygame.display.set_caption("test_game")
 
-biscuit = pygame.Rect(200, 200, 100, 100)
-glass = pygame.Rect(400 - 100, 500, 200, 250)
+biscuit = pygame.Rect(200, 200, 100, 200)
+glass = pygame.Rect(300 - 100, 500, 200, 250)
+
+tea_height = float(glass.height * 0.75)
+tea = pygame.Rect(glass.x, glass.bottom - int(tea_height), glass.width, int(tea_height))
 
 dragging = False
 grab_offset_x = 0
@@ -57,7 +60,21 @@ while running:
         vel_x = 0
         vel_y = 0
 
+    if biscuit.colliderect(tea) and tea_height > 0:
+        buoyancy = 0.8
+        drag_resistance = 0.8
+        
+        vel_x *= drag_resistance
+        vel_y *= drag_resistance
+        vel_y -= buoyancy
+
+        tea_height = max(0.0, tea_height - 0.2)
+        tea.height = int(tea_height)
+        tea.y = glass.bottom - tea.height
+
     screen.fill((0, 0, 0))
+    if tea.height > 0:
+        pygame.draw.rect(screen, (255, 255, 0), tea)
     pygame.draw.rect(screen, (255, 255, 255), biscuit)
     pygame.draw.rect(screen, (255, 255, 255), glass, 2)
 
